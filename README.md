@@ -21,11 +21,23 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Comment PR
-        uses: thollander/actions-comment-pull-request@v1
+        uses: thollander/actions-comment-pull-request@v3
         with:
           message: |
             Hello world ! :wave:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Comment a file content
+
+Thanks to the `file-path` input, a file content can be commented.
+You can either pass an absolute file-path or a relative one that will be by default retrieved from `GITHUB_WORKSPACE`. 
+(Note that if both a `message` and `file-path` are provided, `message` will take precedence.)
+
+```yml
+- name: PR comment with file
+  uses: thollander/actions-comment-pull-request@v3
+  with:
+    file-path: /path/to/file.txt
 ```
 
 
@@ -36,54 +48,79 @@ It takes only valid reactions and adds it to the comment you've just created. (S
 
 ```yml
 - name: PR comment with reactions
-  uses: thollander/actions-comment-pull-request@v1
+  uses: thollander/actions-comment-pull-request@v3
   with:
     message: |
       Hello world ! :wave:
     reactions: eyes, rocket
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### Specifying which pull request to comment on
 
-You can explicitly input which pull request should be commented on by passing the `pr_number` input.
+You can explicitly input which pull request should be commented on by passing the `pr-number` input.
 That is particularly useful for manual workflow for instance (`workflow_run`).
 
 ```yml
 ...
 - name: Comment PR
-  uses: thollander/actions-comment-pull-request@v1
+  uses: thollander/actions-comment-pull-request@v3
   with:
     message: |
       Hello world ! :wave:
-    pr_number: 123 # This will comment on pull request #123
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    pr-number: 123 # This will comment on pull request #123
 ```
 
 
-### Upsert a comment
+### Update a comment
 
-Editing an existing comment is also possible thanks to the `comment_includes` input.
+Editing an existing comment is also possible thanks to the `comment-tag` input.
 
-It will search through all the comments of the PR and get the first one that has the provided text in it.
-If the comment body is not found, it will create a new comment.
+Thanks to this parameter, it will be possible to identify your comment and then to upsert on it. 
+If the comment is not found at first, it will create a new comment.
 
 _That is particularly interesting while committing multiple times in a PR and that you just want to have the last execution report printed. It avoids flooding the PR._
 
 ```yml
 ...
-- name: Comment PR
-  uses: thollander/actions-comment-pull-request@v1
+- name: Comment PR with execution number
+  uses: thollander/actions-comment-pull-request@v3
   with:
-    message: 'Loading ...'
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    message: |
+      _(execution **${{ github.run_id }}** / attempt **${{ github.run_attempt }}**)_
+    comment-tag: execution
+```
+
+Note: the input `mode` can be used to either `upsert` (by default) or `recreate` the comment (= delete and create)
+
+### Delete a comment
+
+
+Deleting a comment with a specific `comment-tag` is possible with the `mode: delete`. If a comment with the `comment-tag` exists, it will be deleted when ran.
+
+```yml
 ...
-- name: Edit PR comment
-  uses: thollander/actions-comment-pull-request@v1
+- name: Delete a comment
+  uses: thollander/actions-comment-pull-request@v3
   with:
-    message: 'Content loaded ! (edited)'
-    comment_includes: 'Loading'
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    comment-tag: to_delete
+    mode: delete
+```
+
+### Delete a comment on job completion
+
+Deleting an existing comment on job completion is also possible thanks to the `comment-tag` input combined with `mode: delete-on-completion`.
+
+This will delete the comment at the end of the job. 
+
+```yml
+...
+- name: Write a comment that will be deleted at the end of the job
+  uses: thollander/actions-comment-pull-request@v3
+  with:
+    message: |
+      The PR is being built...
+    comment-tag: to_delete_on_completion
+    mode: delete-on-completion
 ```
 
 ## Inputs 
@@ -92,11 +129,60 @@ _That is particularly interesting while committing multiple times in a PR and th
 
 | Name | Description | Required | Default |
 | --- | --- | --- | --- |
-| `GITHUB_TOKEN` | Token that is used to create comments | ✅ | |
-| `message` | The comment body | ✅ | |
+| `github-token` | Token that is used to create comments. Defaults to ${{ github.token }} | ✅ | |
+| `message` | Comment body | | |
+| `file-path` | Path of the file that should be commented | | |
 | `reactions` | List of reactions for the comment (comma separated). See https://docs.github.com/en/rest/reactions#reaction-types  | | |
-| `pr_number` | The number of the pull request where to create the comment | | current pull request number (deduced from context) |
-| `comment_includes` | The text that should be used to find comment in case of replacement. | | |
+| `pr-number` | The number of the pull request where to create the comment | | current pull-request/issue number (deduced from context) |
+| `comment-tag` | A tag on your comment that will be used to identify a comment in case of replacement | | |
+| `mode` | Mode that will be used to update comment (upsert/recreate/delete/delete-on-completion) | | upsert |
+| `create-if-not-exists` | Whether a comment should be created even if `comment-tag` is not found | | true |
+
+
+## Outputs 
+
+### Action outputs
+
+You can get some outputs from this actions : 
+
+| Name | Description |
+| --- | --- |
+| `id` | Comment id that was created or updated | 
+| `body` | Comment body |
+| `html-url` | URL of the comment created or updated |
+
+### Example output
+
+```yaml
+- name: Comment PR
+  uses: thollander/actions-comment-pull-request@v3
+  id: hello
+  with:
+    message: |
+      Hello world ! :wave:
+- name: Check outputs
+  run: |
+    echo "id : ${{ steps.hello.outputs.id }}"
+    echo "body : ${{ steps.hello.outputs.body }}"
+    echo "html-url : ${{ steps.hello.outputs.html-url }}"
+```
+
+## Permissions
+
+Depending on the permissions granted to your token, you may lack some rights. 
+To run successfully, this actions needs at least : 
+
+```yaml
+permissions: 
+   pull-requests: write 
+```
+
+Add this in case you get `Resource not accessible by integration` error.
+See [jobs.<job_id>.permissions](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idpermissions) for more information.
+
+
+> Note that, if the PR comes from a fork, it will have only read permission despite the permissions given in the action for the `pull_request` event.
+> In this case, you may use the `pull_request_target` event. With this event, permissions can be given without issue (the difference is that it will execute the action from the target branch and not from the origin PR).
 
 ## Contributing
 
@@ -108,4 +194,3 @@ It is handled by `vercel/ncc` compiler.
 ```sh
 $ npm run build
 ```
-
