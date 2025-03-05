@@ -2,7 +2,7 @@ on: pull_request
 
 jobs:
   test_comment_pr:
-    runs-on: ubuntu-latest
+    runs-on:  depot-ubuntu-22.04-small
     name: (NRT) Comment PR
     steps:
       - name: Checkout
